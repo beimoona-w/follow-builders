@@ -5,11 +5,7 @@
   "type": "module",
   "scripts": {
     "generate-feed": "node generate-feed.js",
-    "prepare-digest": "node prepare-digest.js"
-  },
-  "dependencies": {
-    "@anthropic-ai/sdk": "^0.92.0",
-    "dotenv": "^16.4.0",
-    "proper-lockfile": "^4.1.0"
+    "prepare-digest": "node prepare-digest.js",
+    "test": "node smoke-test.js"
   }
 }

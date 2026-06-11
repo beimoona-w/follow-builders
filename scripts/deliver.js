@@ -4,28 +4,27 @@
 // Follow Builders — Delivery Script (Editorial Briefing UI v4)
 // ============================================================================
 // Features:
-//   1. Editorial layout: serif masthead, 660px reading measure, numbered brief
+//   1. Editorial layout: masthead + sticky briefing sidebar on wide screens
 //   2. One card per builder / podcast episode / blog post (H3 = card boundary)
 //   3. Source links as compact deduplicated chips in the card footer
 //   4. EN / bilingual / 中文 language toggle (persisted)
 //   5. Dark mode (follows system preference, toggleable, persisted)
 //   6. Scrollspy on the briefing list + gentle reveal (reduced-motion aware)
 //   7. marked.js inlined from local cache — archives stay readable offline
-//   8. Keyword highlighting, reading-time estimate, Telegram & Email delivery
+//   8. Keyword highlighting, reading-time estimate, archive index page
 // ============================================================================
 
-import { readFile, mkdir, writeFile } from 'fs/promises';
+import { readFile, mkdir, writeFile, readdir } from 'fs/promises';
 import { existsSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
 import { exec } from 'child_process';
-import { config as loadEnv } from 'dotenv';
+import { pathToFileURL } from 'url';
 
 // -- Constants ---------------------------------------------------------------
 
 const USER_DIR = join(homedir(), '.follow-builders');
 const CONFIG_PATH = join(USER_DIR, 'config.json');
-const ENV_PATH = join(USER_DIR, '.env');
 
 // -- Read input --------------------------------------------------------------
 
@@ -39,87 +38,6 @@ async function getDigestText() {
   const chunks = [];
   for await (const chunk of process.stdin) chunks.push(chunk);
   return Buffer.concat(chunks).toString('utf-8');
-}
-
-// -- Telegram Delivery -------------------------------------------------------
-
-async function sendTelegram(text, botToken, chatId) {
-  const MAX_LEN = 4000;
-  const chunks = [];
-  let remaining = text;
-  while (remaining.length > 0) {
-    if (remaining.length <= MAX_LEN) {
-      chunks.push(remaining);
-      break;
-    }
-    let splitAt = remaining.lastIndexOf('\n', MAX_LEN);
-    if (splitAt < MAX_LEN * 0.5) splitAt = MAX_LEN;
-    chunks.push(remaining.slice(0, splitAt));
-    remaining = remaining.slice(splitAt);
-  }
-
-  for (const chunk of chunks) {
-    const res = await fetch(
-      `https://api.telegram.org/bot${botToken}/sendMessage`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          chat_id: chatId,
-          text: chunk,
-          parse_mode: 'Markdown',
-          disable_web_page_preview: true
-        })
-      }
-    );
-
-    if (!res.ok) {
-      const err = await res.json();
-      if (err.description && err.description.includes("can't parse")) {
-        await fetch(
-          `https://api.telegram.org/bot${botToken}/sendMessage`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              chat_id: chatId,
-              text: chunk,
-              disable_web_page_preview: true
-            })
-          }
-        );
-      } else {
-        throw new Error(`Telegram API error: ${err.description}`);
-      }
-    }
-
-    if (chunks.length > 1) await new Promise(r => setTimeout(r, 500));
-  }
-}
-
-// -- Email Delivery (Resend) -------------------------------------------------
-
-async function sendEmail(text, apiKey, toEmail) {
-  const res = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`
-    },
-    body: JSON.stringify({
-      from: 'AI Builders Digest <digest@resend.dev>',
-      to: [toEmail],
-      subject: `AI Builders Digest — ${new Date().toLocaleDateString('en-US', {
-        weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
-      })}`,
-      text: text
-    })
-  });
-
-  if (!res.ok) {
-    const err = await res.json();
-    throw new Error(`Resend API error: ${err.message || JSON.stringify(err)}`);
-  }
 }
 
 // -- Local HTML Delivery (Editorial Briefing UI) -------------------------------
@@ -288,7 +206,7 @@ function buildHtmlPage(dateStr, markdownText, markedSource) {
   jsLines.push("  var pairs=firsts.slice(0,5);");
   jsLines.push("  var mr=document.getElementById('must-read-container');");
   jsLines.push("  mr.innerHTML='<div class=\"must-read\"><div class=\"must-read-title\">今日速览</div><ol>'+pairs.map(function(p){var main=p.en||p.cn,sub=p.en?p.cn:'';return '<li><a href=\"#'+p.id+'\"><span class=\"mr-en\">'+main+'</span>'+(sub?'<span class=\"mr-zh\">'+sub+'</span>':'')+'</a></li>';}).join('')+'</ol></div>';");
-  jsLines.push("}");
+  jsLines.push("}else{document.querySelector('.layout').classList.add('solo');}");
 
   // Scrollspy: highlight the briefing entry of the card in view
   jsLines.push("if('IntersectionObserver' in window){");
@@ -323,6 +241,8 @@ function buildHtmlPage(dateStr, markdownText, markedSource) {
     "body::before{content:'';position:fixed;inset:0;background:radial-gradient(1100px 480px at 50% -8%,var(--accent-soft),transparent 70%);pointer-events:none;z-index:-1}",
     "#progress-bar{position:fixed;top:0;left:0;height:3px;background:linear-gradient(to right,var(--accent),#c084fc);width:0%;z-index:100;transition:width .1s}",
     ".controls{position:fixed;top:18px;right:18px;display:flex;gap:8px;z-index:50}",
+    ".archive-link{display:flex;align-items:center;font-size:12px;font-weight:600;color:var(--text-muted);background:var(--card-bg);border:1px solid var(--border);border-radius:999px;padding:0 14px;text-decoration:none;box-shadow:var(--shadow);transition:all .2s}",
+    ".archive-link:hover{color:var(--accent);border-color:var(--accent)}",
     ".seg{display:flex;background:var(--card-bg);border:1px solid var(--border);border-radius:999px;padding:3px;box-shadow:var(--shadow)}",
     ".seg button{border:none;background:transparent;font-family:var(--sans);font-size:12px;font-weight:600;color:var(--text-muted);padding:5px 12px;border-radius:999px;cursor:pointer;transition:all .2s}",
     ".seg button.active{background:var(--accent);color:#fff}",
@@ -333,9 +253,12 @@ function buildHtmlPage(dateStr, markdownText, markedSource) {
     ".site-title{font-family:var(--serif);font-size:clamp(34px,6vw,52px);font-weight:600;color:var(--text-heading);letter-spacing:-.01em;line-height:1.08}",
     ".date-line{font-family:var(--serif);font-style:italic;font-size:17px;color:var(--text-muted);margin-top:12px}",
     ".meta-line{font-size:12.5px;color:var(--text-muted);margin-top:10px;letter-spacing:.05em}",
-    ".lede{max-width:660px;margin:6px auto 0;font-size:16.5px;line-height:1.9;color:var(--text-main);text-align:center;padding:0 10px}",
+    ".lede{max-width:760px;margin:6px auto 0;font-size:16.5px;line-height:1.9;color:var(--text-main);text-align:center;padding:0 10px}",
     ".lede::before{content:'';display:block;width:46px;height:2px;background:var(--accent);margin:0 auto 22px;border-radius:2px}",
-    ".must-read{max-width:660px;margin:40px auto 0;border-top:1px solid var(--border-strong);border-bottom:1px solid var(--border-strong)}",
+    ".must-read{margin:0;border-top:1px solid var(--border-strong);border-bottom:1px solid var(--border-strong)}",
+    ".layout{max-width:720px;margin:44px auto 0;display:grid;grid-template-columns:minmax(0,1fr);gap:36px 56px;align-items:start;justify-content:center}",
+    ".layout.solo{grid-template-columns:minmax(0,1fr)!important}",
+    "@media(min-width:1100px){.layout{max-width:1200px;grid-template-columns:300px minmax(0,820px)}#must-read-container{position:sticky;top:28px}}",
     ".must-read-title{font-size:12px;font-weight:700;letter-spacing:.24em;text-transform:uppercase;color:var(--text-heading);padding:20px 0 4px}",
     ".must-read ol{margin:0;padding:4px 0 16px;list-style:none;counter-reset:mr}",
     ".must-read li{counter-increment:mr;position:relative;padding:11px 0 11px 46px;border-top:1px solid var(--border)}",
@@ -349,7 +272,7 @@ function buildHtmlPage(dateStr, markdownText, markedSource) {
     "body[data-lang=zh] .mr-en{display:none}",
     "body[data-lang=zh] .mr-zh{color:var(--text-heading);font-size:14.5px;font-weight:500;margin-top:0}",
     "body[data-lang=zh] .must-read li:hover .mr-zh,body[data-lang=zh] .must-read li.active .mr-zh{color:var(--accent)}",
-    "#content{max-width:660px;margin:0 auto;display:flex;flex-direction:column;gap:18px}",
+    "#content{display:flex;flex-direction:column;gap:18px;min-width:0}",
     "h1{font-family:var(--serif);font-size:26px;font-weight:600;text-align:center;margin:24px 0;color:var(--text-heading)}",
     "h2{display:flex;align-items:center;gap:14px;font-size:12px;font-weight:700;letter-spacing:.24em;text-transform:uppercase;color:var(--text-muted);margin:36px 0 8px}",
     "h2::after{content:'';flex:1;height:1px;background:var(--border-strong)}",
@@ -392,6 +315,7 @@ function buildHtmlPage(dateStr, markdownText, markedSource) {
     '</head>\n<body>\n' +
     '<div id="progress-bar"></div>\n' +
     '<div class="controls">\n' +
+    '  <a class="archive-link" href="index.html" title="往期归档">归档</a>\n' +
     '  <div class="seg" id="langSeg"><button data-lang="en">EN</button><button data-lang="both">双语</button><button data-lang="zh">中</button></div>\n' +
     '  <button class="dark-toggle" id="darkToggle" title="切换暗色模式">🌙</button>\n' +
     '</div>\n' +
@@ -402,11 +326,72 @@ function buildHtmlPage(dateStr, markdownText, markedSource) {
     '  <div class="meta-line" id="metaLine"></div>\n' +
     '</header>\n' +
     '<div id="lede-container"></div>\n' +
+    '<div class="layout">\n' +
     '<div id="must-read-container"></div>\n' +
     '<div id="content"></div>\n' +
+    '</div>\n' +
     '<button id="backToTop" title="返回顶部">↑</button>\n' +
     '<script>' + jsBlock + '<' + '/script>\n' +
     '</body>\n</html>';
+}
+
+
+// -- Archive Index Page --------------------------------------------------------
+// Regenerated after each delivery so the folder always has an up-to-date
+// magazine-style index of every saved digest. CSS-only dark mode.
+
+async function generateArchiveIndex(folderPath) {
+  const files = await readdir(folderPath);
+  const dates = files
+    .filter(f => /^\d{4}-\d{2}-\d{2}\.html$/.test(f))
+    .sort()
+    .reverse();
+
+  const items = dates.map(f => {
+    const date = f.replace('.html', '');
+    const d = new Date(date + 'T00:00:00');
+    const weekday = d.toLocaleDateString('zh-CN', { weekday: 'long' });
+    const display = d.toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' });
+    return '<a class="item" href="' + f + '"><span class="num"></span><span class="d">' + display +
+      '</span><span class="w">' + weekday + '</span><span class="arrow">→</span></a>';
+  }).join('\n');
+
+  const css = [
+    "@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600&display=swap');",
+    ":root{--bg:#faf9f7;--card-bg:#fff;--text-main:#3d3d43;--text-muted:#85858f;--text-heading:#1c1c21;--accent:#4f46e5;--accent-soft:rgba(79,70,229,.07);--border:#e8e6e1;--border-strong:#d9d6cf;--shadow:0 1px 2px rgba(28,25,23,.04),0 8px 24px -12px rgba(28,25,23,.12);--serif:'Fraunces',Georgia,'Songti SC',serif;--sans:'Inter',-apple-system,'PingFang SC',sans-serif}",
+    "@media(prefers-color-scheme:dark){:root{--bg:#101013;--card-bg:#1a1a20;--text-main:#c6c6cd;--text-muted:#82828c;--text-heading:#f1f1f4;--accent:#818cf8;--accent-soft:rgba(129,140,248,.1);--border:#26262e;--border-strong:#34343e;--shadow:0 1px 2px rgba(0,0,0,.4),0 12px 32px -16px rgba(0,0,0,.55)}}",
+    "body{font-family:var(--sans);background:var(--bg);color:var(--text-main);margin:0;padding:0 20px 90px;-webkit-font-smoothing:antialiased}",
+    "body::before{content:'';position:fixed;inset:0;background:radial-gradient(1100px 480px at 50% -8%,var(--accent-soft),transparent 70%);pointer-events:none;z-index:-1}",
+    ".masthead{max-width:920px;margin:0 auto;padding:74px 0 40px;text-align:center}",
+    ".overline{font-size:11px;font-weight:700;letter-spacing:.28em;text-transform:uppercase;color:var(--accent);margin-bottom:18px}",
+    ".site-title{font-family:var(--serif);font-size:clamp(32px,5vw,46px);font-weight:600;color:var(--text-heading);line-height:1.1}",
+    ".count{font-family:var(--serif);font-style:italic;font-size:16px;color:var(--text-muted);margin-top:12px}",
+    ".list{max-width:660px;margin:0 auto;counter-reset:n;border-top:1px solid var(--border-strong)}",
+    ".item{counter-increment:n;display:flex;align-items:baseline;gap:16px;padding:16px 6px;border-bottom:1px solid var(--border);text-decoration:none;color:var(--text-heading);transition:background .2s,padding .2s}",
+    ".item:hover{background:var(--card-bg);padding-left:14px}",
+    ".num::before{content:counter(n,decimal-leading-zero);font-family:var(--serif);font-size:14px;font-weight:600;color:var(--accent);font-variant-numeric:tabular-nums}",
+    ".d{font-family:var(--serif);font-size:17px;font-weight:600;flex:1}",
+    ".w{font-size:13px;color:var(--text-muted)}",
+    ".arrow{color:var(--accent);opacity:0;transition:opacity .2s}",
+    ".item:hover .arrow{opacity:1}",
+    "@media(max-width:640px){body{padding:0 14px 60px}.masthead{padding-top:56px}}"
+  ].join('\n');
+
+  const html = '<!DOCTYPE html>\n<html lang="zh-CN">\n<head>\n' +
+    '<meta charset="utf-8">\n' +
+    '<meta name="viewport" content="width=device-width, initial-scale=1.0">\n' +
+    '<title>AI Builders Digest · 往期归档</title>\n' +
+    '<style>' + css + '</style>\n' +
+    '</head>\n<body>\n' +
+    '<header class="masthead">\n' +
+    '  <div class="overline">Follow Builders · Archive</div>\n' +
+    '  <div class="site-title">往期归档</div>\n' +
+    '  <div class="count">共 ' + dates.length + ' 期</div>\n' +
+    '</header>\n' +
+    '<nav class="list">\n' + items + '\n</nav>\n' +
+    '</body>\n</html>';
+
+  await writeFile(join(folderPath, 'index.html'), html, 'utf-8');
 }
 
 async function saveLocalHtml(text, folderPath) {
@@ -418,14 +403,17 @@ async function saveLocalHtml(text, folderPath) {
   var html = buildHtmlPage(dateStr, text, markedSource);
 
   await writeFile(filePath, html, 'utf-8');
-  exec('open "' + filePath + '"');
+
+  // Keep the archive index in sync; failure here must not block delivery
+  try { await generateArchiveIndex(folderPath); } catch {}
+
+  if (!process.env.FB_NO_OPEN) exec('open "' + filePath + '"');
   return filePath;
 }
 
 // -- Main --------------------------------------------------------------------
 
 async function main() {
-  loadEnv({ path: ENV_PATH });
   var config = {};
   if (existsSync(CONFIG_PATH)) config = JSON.parse(await readFile(CONFIG_PATH, 'utf-8'));
 
@@ -439,24 +427,6 @@ async function main() {
 
   try {
     switch (delivery.method) {
-      case 'telegram': {
-        var botToken = process.env.TELEGRAM_BOT_TOKEN;
-        var chatId = delivery.chatId;
-        if (!botToken) throw new Error('TELEGRAM_BOT_TOKEN not found in .env');
-        if (!chatId) throw new Error('delivery.chatId not found in config.json');
-        await sendTelegram(digestText, botToken, chatId);
-        console.log(JSON.stringify({ status: 'ok', method: 'telegram', message: 'Digest sent to Telegram' }));
-        break;
-      }
-      case 'email': {
-        var apiKey = process.env.RESEND_API_KEY;
-        var toEmail = delivery.email;
-        if (!apiKey) throw new Error('RESEND_API_KEY not found in .env');
-        if (!toEmail) throw new Error('delivery.email not found in config.json');
-        await sendEmail(digestText, apiKey, toEmail);
-        console.log(JSON.stringify({ status: 'ok', method: 'email', message: 'Digest sent to ' + toEmail }));
-        break;
-      }
       case 'local_html': {
         var folder = delivery.folder || join(homedir(), 'Documents', 'AI_Builders_Digests');
         var filePath = await saveLocalHtml(digestText, folder);
@@ -474,4 +444,9 @@ async function main() {
   }
 }
 
-main();
+// Run main() only when executed directly, so tools can import the renderers
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main();
+}
+
+export { buildHtmlPage, generateArchiveIndex, getMarkedSource };

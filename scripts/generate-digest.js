@@ -125,7 +125,11 @@ Output only the digest text itself — no preamble, no explanation, no markdown 
       env: { ...process.env, CLAUDE_CODE_ENTRYPOINT: 'cli' }
     });
 
-    proc.stdout.pipe(process.stdout);
+    // Buffer the output so we can validate it before passing it downstream —
+    // the claude CLI sometimes prints API errors to stdout with exit code 0,
+    // which previously got archived as if it were a real digest.
+    const out = [];
+    proc.stdout.on('data', d => out.push(d));
     proc.stderr.on('data', d => process.stderr.write(d));
 
     const timer = setTimeout(() => {
@@ -135,8 +139,14 @@ Output only the digest text itself — no preamble, no explanation, no markdown 
 
     proc.on('close', code => {
       clearTimeout(timer);
-      if (code === 0) resolve();
-      else reject(new Error(`claude exited with code ${code}`));
+      if (code !== 0) return reject(new Error(`claude exited with code ${code}`));
+      const text = Buffer.concat(out).toString('utf-8');
+      const trimmed = text.trim();
+      if (trimmed.length < 200 || /^(failed to authenticate|api error|error:)/i.test(trimmed)) {
+        return reject(new Error('claude returned an error instead of a digest: ' + trimmed.slice(0, 120)));
+      }
+      process.stdout.write(text);
+      resolve();
     });
     proc.on('error', err => {
       clearTimeout(timer);
