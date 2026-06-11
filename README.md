@@ -58,7 +58,7 @@ cd follow-builders
 
 ### 第三步：配置 Claude CLI
 
-本项目依赖 Claude CLI 来生成摘要。请参考 [Claude CLI 官方文档](https://docs.anthropic.com/en/docs/claude-cli) 完成安装和登录。
+本项目依赖 Claude Code CLI 来生成摘要。请参考 [Claude Code 官方文档](https://docs.anthropic.com/en/docs/claude-code) 完成安装和登录（终端运行 `claude` 能进入对话即为就绪）。
 
 ### 第四步：设置配置文件
 
@@ -81,6 +81,11 @@ EOF
 
 ```bash
 cd ~/follow-builders/scripts
+
+# 先跑冒烟测试（不调用 Claude，几秒出结果，验证环境没问题）
+npm test
+
+# 再完整生成一次今天的摘要
 node prepare-digest.js | node generate-digest.js | node deliver.js
 ```
 
