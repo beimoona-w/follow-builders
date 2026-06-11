@@ -86,40 +86,18 @@ node prepare-digest.js | node generate-digest.js | node deliver.js
 
 ### 第六步：设置每日自动执行
 
-```bash
-cat > ~/Library/LaunchAgents/com.followbuilders.digest.plist << 'EOF'
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>Label</key>
-  <string>com.followbuilders.digest</string>
-  <key>ProgramArguments</key>
-  <array>
-    <string>/bin/bash</string>
-    <string>-c</string>
-    <string>~/follow-builders/scripts/run_digest.sh</string>
-  </array>
-  <key>StartCalendarInterval</key>
-  <dict>
-    <key>Hour</key>
-    <integer>10</integer>
-    <key>Minute</key>
-    <integer>30</integer>
-  </dict>
-  <key>StandardOutPath</key>
-  <string>/tmp/follow-builders.log</string>
-  <key>StandardErrorPath</key>
-  <string>/tmp/follow-builders.log</string>
-</dict>
-</plist>
-EOF
+定时任务配置文件已包含在仓库中（`scripts/com.followbuilders.digest.plist`），直接安装即可：
 
-# 激活定时任务
-launchctl load ~/Library/LaunchAgents/com.followbuilders.digest.plist
+```bash
+cp ~/follow-builders/scripts/com.followbuilders.digest.plist ~/Library/LaunchAgents/
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.followbuilders.digest.plist
 ```
 
 **搞定！从明天起，每天 10:30 你的浏览器会自动弹出最新一期 AI 情报。**
+
+> 💡 **错过了 10:30 也没关系。** 定时任务包含补跑机制（开机时 + 每 30 分钟检查一次）：
+> 只要当天还没生成过摘要、且已过 10:30，打开电脑后会自动补上当天的摘要。
+> 每天只会生成一次，不会重复弹出。
 
 ---
 
@@ -132,7 +110,9 @@ launchctl load ~/Library/LaunchAgents/com.followbuilders.digest.plist
 | **关键词识别** | 无 | 30+ AI 术语自动高亮 |
 | **暗色模式** | 无 | ✅ 一键切换，偏好记忆 |
 | **本地存储** | 不保存 | 每日自动归档为 HTML 文件 |
-| **失败处理** | 静默失败 | macOS 弹窗提醒 + 一键重试 |
+| **失败处理** | 静默失败 | 自动重试 + macOS 弹窗提醒 |
+| **错过定时** | 当天摘要丢失 | ✅ 开机自动补跑，绝不漏一期 |
+| **原文链接** | 大段裸链接刷屏 | ✅ 卡片底部紧凑链接胶囊 |
 | **返回顶部** | 无 | ✅ 浮动按钮，平滑滚动 |
 | **阅读进度** | 无 | ✅ 顶部渐变进度条 |
 | **信息源更新** | ✅ 云端自动同步 | ✅ **完整保留** |
@@ -145,8 +125,9 @@ launchctl load ~/Library/LaunchAgents/com.followbuilders.digest.plist
 ~/follow-builders/scripts/
 ├── prepare-digest.js      # 从云端拉取最新信息源
 ├── generate-digest.js     # 调用 Claude AI 生成双语摘要
-├── deliver.js             # ⭐ 定制版交付脚本（SaaS UI）
-└── run_digest.sh          # ⭐ 执行包装（失败弹窗+重试）
+├── deliver.js             # ⭐ 定制版交付脚本（SaaS UI + 链接胶囊）
+├── run_digest.sh          # ⭐ 执行包装（幂等守卫+自动重试+失败弹窗）
+└── com.followbuilders.digest.plist  # ⭐ launchd 定时任务（含补跑机制）
 
 ~/.follow-builders/
 ├── config.json            # 推送方式配置
@@ -196,7 +177,10 @@ launchctl load ~/Library/LaunchAgents/com.followbuilders.digest.plist
 A: 原项目作者在云端统一维护。你的本地版本每次执行时自动同步最新名单，无需手动操作。
 
 **Q: 生成失败了怎么办？**
-A: 如果定时任务执行失败，macOS 会弹出对话框问你是否重试。你也可以手动在终端执行上面的命令。
+A: 脚本会先自动重试一次；仍失败时 macOS 会弹出对话框问你是否重试（每天最多打扰一次）。之后每 30 分钟还会自动补跑，直到当天摘要生成成功。你也可以手动在终端执行上面的命令。
+
+**Q: 10:30 没开电脑，摘要会丢吗？**
+A: 不会。只要当天任意时间打开电脑，补跑机制会立即生成当天的摘要。
 
 **Q: 可以修改执行时间吗？**
 A: 编辑 `~/Library/LaunchAgents/com.followbuilders.digest.plist` 中的 `Hour` 和 `Minute` 值，然后重新加载。

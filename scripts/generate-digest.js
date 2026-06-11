@@ -14,6 +14,10 @@ import { spawn } from 'child_process';
 
 const CLAUDE_BIN = '/opt/homebrew/bin/claude';
 
+// A hung claude process would silently kill the whole day's digest;
+// the launchd catch-up interval will retry after we bail out.
+const CLAUDE_TIMEOUT_MS = 15 * 60 * 1000;
+
 async function main() {
   // Read JSON blob from stdin
   const chunks = [];
@@ -105,11 +109,20 @@ Output only the digest text itself — no preamble, no explanation, no markdown 
     proc.stdout.pipe(process.stdout);
     proc.stderr.on('data', d => process.stderr.write(d));
 
+    const timer = setTimeout(() => {
+      proc.kill('SIGKILL');
+      reject(new Error(`claude timed out after ${CLAUDE_TIMEOUT_MS / 60000} minutes`));
+    }, CLAUDE_TIMEOUT_MS);
+
     proc.on('close', code => {
+      clearTimeout(timer);
       if (code === 0) resolve();
       else reject(new Error(`claude exited with code ${code}`));
     });
-    proc.on('error', reject);
+    proc.on('error', err => {
+      clearTimeout(timer);
+      reject(err);
+    });
   });
 }
 

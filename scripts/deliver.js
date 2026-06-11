@@ -1,18 +1,19 @@
 #!/usr/bin/env node
 
 // ============================================================================
-// Follow Builders — Delivery Script (Enhanced SaaS UI Edition v2)
+// Follow Builders — Delivery Script (Enhanced SaaS UI Edition v3)
 // ============================================================================
-// Improvements:
-//   1. Historical archive index page
-//   2. Dark mode toggle
-//   3. Keyword highlighting for AI terms
-//   4. "Today's Must-Read" summary section
-//   5. Full Telegram & Email delivery restored
-//   6. Failure notification via macOS dialog (handled by wrapper script)
+// Features:
+//   1. One card per builder / podcast episode / blog post (H3 = card boundary)
+//   2. Source links rendered as compact deduplicated chips in the card footer
+//   3. Dark mode toggle
+//   4. Keyword highlighting for AI terms
+//   5. "Today's Must-Read" summary section
+//   6. Full Telegram & Email delivery
+//   7. Failure notification via macOS dialog (handled by wrapper script)
 // ============================================================================
 
-import { readFile, mkdir, writeFile, readdir } from 'fs/promises';
+import { readFile, mkdir, writeFile } from 'fs/promises';
 import { existsSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
@@ -120,91 +121,24 @@ async function sendEmail(text, apiKey, toEmail) {
   }
 }
 
-// -- Generate Index Page -----------------------------------------------------
-
-async function generateIndexPage(folderPath) {
-  const files = await readdir(folderPath);
-  const digests = files
-    .filter(f => f.match(/^\\d{4}-\\d{2}-\\d{2}\\.html$/) && f !== 'index.html')
-    .sort()
-    .reverse();
-
-  const listItems = digests.map(f => {
-    const date = f.replace('.html', '');
-    const d = new Date(date + 'T00:00:00');
-    const weekday = d.toLocaleDateString('zh-CN', { weekday: 'long' });
-    const display = d.toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' });
-    return `<a href="${f}" class="index-card"><span class="index-date">${display}</span><span class="index-weekday">${weekday}</span><span class="index-arrow">→</span></a>`;
-  }).join('\\n');
-
-  const indexHtml = `<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>AI Builders Digest — 往期归档</title>
-<style>
-  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;800&display=swap');
-  body {
-    font-family: 'Inter', -apple-system, 'SF Pro Display', 'PingFang SC', sans-serif;
-    background: #f8fafc; margin: 0; padding: 40px 20px; min-height: 100vh;
-    -webkit-font-smoothing: antialiased;
-  }
-  .container { max-width: 700px; margin: 0 auto; }
-  h1 { font-size: 28px; font-weight: 800; color: #0f172a; text-align: center; margin-bottom: 8px; }
-  .subtitle { text-align: center; color: #64748b; font-size: 15px; margin-bottom: 40px; }
-  .count { text-align: center; color: #94a3b8; font-size: 13px; margin-bottom: 30px; }
-  .index-card {
-    display: flex; align-items: center; padding: 18px 24px;
-    background: #fff; border-radius: 12px; margin-bottom: 12px;
-    border: 1px solid #e2e8f0; text-decoration: none; color: #334155;
-    transition: all 0.2s ease;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
-  }
-  .index-card:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 25px rgba(0,0,0,0.08);
-    border-color: #6366f1;
-  }
-  .index-date { font-weight: 600; font-size: 16px; flex: 1; }
-  .index-weekday { color: #94a3b8; font-size: 14px; margin-right: 12px; }
-  .index-arrow { color: #6366f1; font-size: 18px; font-weight: 600; opacity: 0; transition: opacity 0.2s; }
-  .index-card:hover .index-arrow { opacity: 1; }
-</style>
-</head>
-<body>
-<div class="container">
-  <h1>📚 AI Builders Digest</h1>
-  <p class="subtitle">你的私人 AI 情报知识库</p>
-  <p class="count">共 ${digests.length} 期</p>
-  ${listItems}
-</div>
-</body>
-</html>`;
-
-  await writeFile(join(folderPath, 'index.html'), indexHtml, 'utf-8');
-}
-
 // -- Local HTML Delivery (SaaS Card UI) --------------------------------------
 
 function buildHtmlPage(dateStr, markdownText) {
-  var escaped = markdownText
-    .replace(/\\/g, '\\\\')
-    .replace(/'/g, "\\'")
-    .replace(/\n/g, '\\n')
-    .replace(/\r/g, '');
+  // JSON.stringify handles quotes/newlines/backslashes correctly; escaping '<'
+  // prevents a literal '</script>' inside the digest from breaking the page.
+  var mdLiteral = JSON.stringify(markdownText).replace(/</g, '\\u003c');
 
   var jsLines = [];
   jsLines.push("var toggleBtn = document.getElementById('darkToggle');");
   jsLines.push("var savedTheme = localStorage.getItem('digest-theme');");
-  jsLines.push("if (savedTheme === 'dark') { document.body.classList.add('dark'); toggleBtn.textContent = '\u2600\uFE0F'; }");
+  jsLines.push("if (savedTheme === 'dark') { document.body.classList.add('dark'); toggleBtn.textContent = '☀️'; }");
   jsLines.push("toggleBtn.addEventListener('click', function() {");
   jsLines.push("  document.body.classList.toggle('dark');");
   jsLines.push("  var isDark = document.body.classList.contains('dark');");
-  jsLines.push("  toggleBtn.textContent = isDark ? '\u2600\uFE0F' : '\uD83C\uDF19';");
+  jsLines.push("  toggleBtn.textContent = isDark ? '☀️' : '🌙';");
   jsLines.push("  localStorage.setItem('digest-theme', isDark ? 'dark' : 'light');");
   jsLines.push("});");
-  jsLines.push("var markdown = '" + escaped + "';");
+  jsLines.push("var markdown = " + mdLiteral + ";");
   jsLines.push("var tempDiv = document.createElement('div');");
   jsLines.push("tempDiv.innerHTML = marked.parse(markdown);");
   jsLines.push("var contentDiv = document.getElementById('content');");
@@ -225,43 +159,87 @@ function buildHtmlPage(dateStr, markdownText) {
   jsLines.push("  });");
   jsLines.push("}");
 
-  // Card building — collect bilingual pairs for must-read
-  jsLines.push("var curCard=null,inCard=false,firsts=[],pCount=0,cardIdx=0;");
-  jsLines.push("Array.from(tempDiv.children).forEach(function(el) {");
-  jsLines.push("  if(el.tagName==='H1'){contentDiv.appendChild(el);return;}");
-  jsLines.push("  if(el.tagName==='H2'||el.tagName==='H3'||el.tagName==='HR'){contentDiv.appendChild(el);inCard=false;return;}");
-  jsLines.push("  if(!inCard){");
-  jsLines.push("    curCard=document.createElement('div');curCard.className='card';curCard.id='card-'+cardIdx;contentDiv.appendChild(curCard);inCard=true;pCount=0;cardIdx++;");
-  jsLines.push("    if(el.tagName==='P'){");
-  jsLines.push("      var tc=el.textContent||'';");
-  jsLines.push("      if(tc.indexOf('Digest')>-1){curCard.remove();cardIdx--;var dh=document.createElement('p');dh.className='date-sub';dh.textContent=tc;contentDiv.appendChild(dh);inCard=false;return;}");
-  jsLines.push("      var nm=tc.split(/[\\u0028\\u2014\\u002D\\u003A\\uFF1A]/)[0].trim();");
-  jsLines.push("      var ini=nm?nm.charAt(0).toUpperCase():'A',hue=0;");
-  jsLines.push("      for(var i=0;i<nm.length;i++) hue+=nm.charCodeAt(i);hue=hue%360;");
-  jsLines.push("      var td=document.createElement('div');td.className='card-title';");
-  jsLines.push("      td.innerHTML='<div class=\"avatar\" style=\"background-color:hsl('+hue+',60%,92%);color:hsl('+hue+',60%,35%)\">'+ini+'</div><div class=\"author-text\">'+el.innerHTML+'</div>';");
-  jsLines.push("      curCard.appendChild(td);return;");
-  jsLines.push("    }");
-  jsLines.push("  }");
-  jsLines.push("  if(el.tagName==='P'&&curCard&&pCount<2){");
-  jsLines.push("    var txt=el.textContent.trim();");
-  jsLines.push("    if(txt.length>40&&!txt.startsWith('http')&&txt.indexOf('TWITTER')===-1&&txt.indexOf('\u2014\u2014')===-1){");
-  jsLines.push("      firsts.push({t:txt.length>80?txt.substring(0,80)+'\u2026':txt,id:curCard.id});");
-  jsLines.push("      pCount++;");
-  jsLines.push("    }");
-  jsLines.push("  }");
-  jsLines.push("  var isLink=el.tagName==='P'&&el.querySelector('a')&&el.textContent.trim()===(el.querySelector('a')?el.querySelector('a').textContent.trim():'');");
-  jsLines.push("  if(isLink){curCard.appendChild(el);inCard=false;return;}");
-  jsLines.push("  curCard.appendChild(el);");
-  jsLines.push("});");
+  // Source-link chips: bare-URL paragraphs are collected per card and rendered
+  // as compact labeled chips in the card footer instead of raw full-width URLs.
+  jsLines.push("function chipLabel(url){");
+  jsLines.push("  try{var h=new URL(url).hostname.replace(/^www\\./,'');");
+  jsLines.push("    if(h==='x.com'||h==='twitter.com')return 'Tweet';");
+  jsLines.push("    if(h.indexOf('youtube')>-1||h==='youtu.be')return 'YouTube';");
+  jsLines.push("    return h;");
+  jsLines.push("  }catch(e){return '原文';}");
+  jsLines.push("}");
 
-  jsLines.push("document.querySelectorAll('.card p').forEach(highlightKw);");
+  // Card state machine: each H3 heading (builder / podcast episode / blog post)
+  // opens one card; EN + CN paragraphs stay together inside it.
+  jsLines.push("var curCard=null,curLinks=[],firsts=[],pCount=0,cardIdx=0,sawSection=false;");
+  jsLines.push("function closeCard(){");
+  jsLines.push("  if(!curCard)return;");
+  jsLines.push("  var seen={},urls=curLinks.filter(function(u){if(seen[u])return false;seen[u]=1;return true;});");
+  jsLines.push("  if(urls.length){");
+  jsLines.push("    var counts={};urls.forEach(function(u){var l=chipLabel(u);counts[l]=(counts[l]||0)+1;});");
+  jsLines.push("    var idx={},foot=document.createElement('div');foot.className='card-links';");
+  jsLines.push("    urls.forEach(function(u){");
+  jsLines.push("      var l=chipLabel(u);idx[l]=(idx[l]||0)+1;");
+  jsLines.push("      var a=document.createElement('a');a.className='link-chip';a.href=u;a.target='_blank';a.rel='noopener';");
+  jsLines.push("      a.textContent='↗ '+l+(counts[l]>1?' '+idx[l]:'');");
+  jsLines.push("      foot.appendChild(a);");
+  jsLines.push("    });");
+  jsLines.push("    curCard.appendChild(foot);");
+  jsLines.push("  }");
+  jsLines.push("  curCard=null;curLinks=[];");
+  jsLines.push("}");
+
+  jsLines.push("Array.from(tempDiv.children).forEach(function(el){");
+  jsLines.push("  var tag=el.tagName;");
+  jsLines.push("  if(tag==='H1'){closeCard();contentDiv.appendChild(el);return;}");
+  jsLines.push("  if(tag==='H2'){closeCard();sawSection=true;contentDiv.appendChild(el);return;}");
+  jsLines.push("  if(tag==='HR'){closeCard();return;}");
+  jsLines.push("  if(tag==='H3'||tag==='H4'){");
+  jsLines.push("    closeCard();");
+  jsLines.push("    curCard=document.createElement('div');curCard.className='card';curCard.id='card-'+cardIdx;cardIdx++;pCount=0;");
+  jsLines.push("    contentDiv.appendChild(curCard);");
+  jsLines.push("    var nm=(el.textContent||'').split(/[\\u0028\\u2014\\u003A\\uFF1A\\u201C\"]/)[0].trim();");
+  jsLines.push("    var ini=nm?nm.charAt(0).toUpperCase():'A',hue=0;");
+  jsLines.push("    for(var i=0;i<nm.length;i++)hue+=nm.charCodeAt(i);hue=hue%360;");
+  jsLines.push("    var td=document.createElement('div');td.className='card-title';");
+  jsLines.push("    td.innerHTML='<div class=\"avatar\" style=\"background-color:hsl('+hue+',60%,92%);color:hsl('+hue+',60%,35%)\">'+ini+'</div><div class=\"author-text\">'+el.innerHTML+'</div>';");
+  jsLines.push("    curCard.appendChild(td);return;");
+  jsLines.push("  }");
+  jsLines.push("  if(tag==='P'){");
+  jsLines.push("    var txt=(el.textContent||'').trim();");
+  jsLines.push("    if(txt.indexOf('Generated through')===0){closeCard();var ft=document.createElement('p');ft.className='digest-footer';ft.innerHTML=el.innerHTML;contentDiv.appendChild(ft);return;}");
+  // Bare URLs (anchor text == its href) are moved out of the paragraph and
+  // into the card's chip footer; real inline [text](url) links stay in place.
+  jsLines.push("    if(curCard){");
+  jsLines.push("      Array.prototype.slice.call(el.querySelectorAll('a')).forEach(function(a){");
+  jsLines.push("        var t=(a.textContent||'').trim();");
+  jsLines.push("        if(!/^https?:\\/\\//.test(t))return;");
+  jsLines.push("        curLinks.push(a.href);");
+  jsLines.push("        var prev=a.previousSibling;a.remove();");
+  jsLines.push("        while(prev&&((prev.nodeType===3&&!prev.textContent.trim())||(prev.nodeType===1&&prev.tagName==='BR'))){var pp=prev.previousSibling;prev.remove();prev=pp;}");
+  jsLines.push("      });");
+  jsLines.push("      txt=(el.textContent||'').trim();");
+  jsLines.push("      if(txt==='')return;");
+  jsLines.push("    }");
+  jsLines.push("    if(!curCard){");
+  jsLines.push("      if(!sawSection&&txt.indexOf('Digest')>-1){var dh=document.createElement('p');dh.className='date-sub';dh.textContent=txt;contentDiv.appendChild(dh);return;}");
+  jsLines.push("      var ld=document.createElement('p');ld.className='lede';ld.innerHTML=el.innerHTML;contentDiv.appendChild(ld);return;");
+  jsLines.push("    }");
+  jsLines.push("    curCard.appendChild(el);");
+  jsLines.push("    if(pCount<2&&txt.length>40){firsts.push({t:txt.length>80?txt.substring(0,80)+'…':txt,id:curCard.id});pCount++;}");
+  jsLines.push("    return;");
+  jsLines.push("  }");
+  jsLines.push("  if(curCard)curCard.appendChild(el);else contentDiv.appendChild(el);");
+  jsLines.push("});");
+  jsLines.push("closeCard();");
+
+  jsLines.push("document.querySelectorAll('.card p, .lede').forEach(highlightKw);");
 
   // Must-read — bilingual pairs with anchor links
   jsLines.push("if(firsts.length>0){");
   jsLines.push("  var pairs=[];for(var i=0;i<firsts.length;i+=2){pairs.push({en:firsts[i].t,cn:firsts[i+1]?firsts[i+1].t:'',id:firsts[i].id});if(pairs.length>=5)break;}");
   jsLines.push("  var mr=document.getElementById('must-read-container');");
-  jsLines.push("  mr.innerHTML='<div class=\"must-read\" style=\"max-width:900px;margin:0 auto 24px auto;\"><div class=\"must-read-title\">\u26A1 \u4ECA\u65E5\u901F\u89C8 \u00B7 Top '+pairs.length+'</div><ul>'+pairs.map(function(p){return '<li><a href=\"#'+p.id+'\" style=\"text-decoration:none;color:inherit;display:block\">'+p.en+(p.cn?'<br><span style=\"color:var(--text-muted);font-size:13px\">'+p.cn+'</span>':'')+'</a></li>';}).join('')+'</ul></div>';");
+  jsLines.push("  mr.innerHTML='<div class=\"must-read\" style=\"max-width:900px;margin:0 auto 24px auto;\"><div class=\"must-read-title\">⚡ 今日速览 · Top '+pairs.length+'</div><ul>'+pairs.map(function(p){return '<li><a href=\"#'+p.id+'\" style=\"text-decoration:none;color:inherit;display:block\">'+p.en+(p.cn?'<br><span style=\"color:var(--text-muted);font-size:13px\">'+p.cn+'</span>':'')+'</a></li>';}).join('')+'</ul></div>';");
   jsLines.push("}");
 
   // Progress + back-to-top visibility
@@ -275,6 +253,7 @@ function buildHtmlPage(dateStr, markdownText) {
   jsLines.push("btt.addEventListener('click',function(){window.scrollTo({top:0,behavior:'smooth'});});");
 
   var jsBlock = jsLines.join('\n');
+
 
   var css = [
     "@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;800&display=swap');",
@@ -301,8 +280,14 @@ function buildHtmlPage(dateStr, markdownText) {
     ".avatar{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:600;flex-shrink:0}",
     ".card p{margin:0 0 20px;font-size:15px;color:var(--text-main);letter-spacing:.2px}",
     ".card p:last-child{margin-bottom:0}",
-    ".card a{color:var(--accent);text-decoration:none;font-size:14px;font-weight:500;word-break:break-all;display:block;margin-top:10px}",
-    ".card a:hover{text-decoration:underline}",
+    ".card p a{color:var(--accent);text-decoration:none;font-weight:500;word-break:break-word}",
+    ".card p a:hover{text-decoration:underline}",
+    ".card-links{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px;padding-top:14px;border-top:1px dashed var(--border-color)}",
+    ".link-chip{display:inline-flex;align-items:center;font-size:12.5px;font-weight:500;color:var(--kw-color);background:var(--kw-bg);padding:4px 12px;border-radius:999px;text-decoration:none;transition:all .2s}",
+    ".link-chip:hover{background:var(--accent);color:#fff;transform:translateY(-1px)}",
+    ".lede{max-width:900px;margin:0 auto;font-size:15.5px;color:var(--text-main);line-height:1.8;background:var(--mustread-bg);border:1px solid var(--mustread-border);border-radius:16px;padding:18px 26px;box-sizing:border-box}",
+    ".digest-footer{text-align:center;font-size:13px;color:var(--text-muted);margin-top:10px}",
+    ".digest-footer a{color:var(--accent);text-decoration:none}",
     ".kw-tag{display:inline;background:var(--kw-bg);color:var(--kw-color);padding:1px 6px;border-radius:4px;font-weight:600;font-size:.95em}",
     "h1{font-size:24px;font-weight:800;text-align:center;margin-bottom:30px;color:var(--text-heading)}",
     ".date-sub{text-align:center;font-size:14px;color:var(--text-muted);margin:0 0 24px;font-weight:500;letter-spacing:.5px}",
