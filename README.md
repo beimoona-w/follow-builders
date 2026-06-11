@@ -1,4 +1,4 @@
-# Follow Builders · SaaS Digest UI Edition
+# Follow Builders · Editorial Briefing Edition
 
 > 🧠 每天 30 秒，掌握全球顶尖 AI Builder 的最新动态。
 >
@@ -10,7 +10,7 @@
 
 一个 **全自动、本地运行** 的 AI 情报推送系统。
 
-它每天自动从 Twitter / X、播客、博客等渠道抓取全球顶尖 AI 建造者（Sam Altman、Andrej Karpathy、Swyx 等）的最新动态，通过 Claude AI 生成中英双语摘要，然后以一个精美的 **SaaS 级仪表盘** 页面呈现在你面前。
+它每天自动从 Twitter / X、播客、博客等渠道抓取全球顶尖 AI 建造者（Sam Altman、Andrej Karpathy、Swyx 等）的最新动态，通过 Claude AI 生成中英双语摘要，然后以一份排版精良的 **杂志式情报简报** 网页呈现在你面前，并自动归档每一期。
 
 **你不需要刷推特，不需要翻墙，不需要任何操作 —— 每天 10:30，浏览器自动弹出今日情报。**
 
@@ -20,12 +20,15 @@
 
 | 功能 | 说明 |
 |------|------|
-| 🃏 **卡片式信息流** | 每位 Builder 的动态独占一张白色圆角卡片，配有彩色哈希头像 |
-| ⚡ **今日速览** | 顶部 Top 5 双语摘要，点击直接跳转到对应卡片 |
-| 🏷️ **AI 关键词高亮** | 自动识别 30+ AI 术语（Claude、LLM、Agent…），紫色标签一目了然 |
-| 🌙 **暗色模式** | 一键切换，偏好自动记忆 |
-| ⬆️ **返回顶部** | 右下角浮动按钮，滚动后淡入，风格与高亮标签统一 |
-| 📊 **阅读进度条** | 顶部渐变色进度条，实时反馈阅读位置 |
+| 📰 **杂志式排版** | Fraunces 衬线报头 + 编号速览目录，宽屏下速览固定为左侧导航栏 |
+| 🃏 **卡片式信息流** | 每位 Builder / 播客 / 博客一张卡片，中英文摘要同卡呈现 |
+| 🌐 **双语切换** | 右上角 EN / 双语 / 中 三档切换，偏好自动记忆 |
+| 🔗 **链接胶囊** | 原文链接收纳为卡片底部的紧凑胶囊（Tweet / YouTube…），自动去重 |
+| ⚡ **今日速览** | Top 5 双语摘要 + 滚动定位高亮，点击跳转对应卡片 |
+| 📚 **往期归档** | 每日自动存档 + 自动生成归档索引页，右上角「归档」直达 |
+| 🏷️ **AI 关键词高亮** | 自动识别 30+ AI 术语（Claude、LLM、Agent…） |
+| 🌙 **暗色模式** | 默认跟随系统，可手动切换并记忆 |
+| 📴 **离线可读** | marked.js 内联进页面，归档文件断网也能永久打开 |
 
 ---
 
@@ -47,14 +50,15 @@ brew install node
 
 ```bash
 cd ~
-git clone https://github.com/zarazhangrui/follow-builders.git
+git clone https://github.com/beimoona-w/follow-builders.git
 cd follow-builders
-npm install
 ```
+
+> 脚本零依赖，无需 `npm install`。
 
 ### 第三步：配置 Claude CLI
 
-本项目依赖 Claude CLI 来生成摘要。请参考 [Claude CLI 官方文档](https://docs.anthropic.com/en/docs/claude-cli) 完成安装和登录。
+本项目依赖 Claude Code CLI 来生成摘要。请参考 [Claude Code 官方文档](https://docs.anthropic.com/en/docs/claude-code) 完成安装和登录（终端运行 `claude` 能进入对话即为就绪）。
 
 ### 第四步：设置配置文件
 
@@ -62,23 +66,26 @@ npm install
 # 创建配置目录
 mkdir -p ~/.follow-builders
 
-# 创建配置文件
-cat > ~/.follow-builders/config.json << 'EOF'
+# 创建配置文件（$HOME 会自动替换成你自己的家目录，无需手动修改）
+cat > ~/.follow-builders/config.json << EOF
 {
   "delivery": {
     "method": "local_html",
-    "folder": "/Users/你的用户名/Documents/AI_Builders_Digests"
+    "folder": "$HOME/Documents/AI_Builders_Digests"
   }
 }
 EOF
 ```
 
-> ⚠️ 把 `你的用户名` 换成你的 Mac 用户名（终端输入 `whoami` 可以查看）
-
 ### 第五步：手动测试一次
 
 ```bash
 cd ~/follow-builders/scripts
+
+# 先跑冒烟测试（不调用 Claude，几秒出结果，验证环境没问题）
+npm test
+
+# 再完整生成一次今天的摘要
 node prepare-digest.js | node generate-digest.js | node deliver.js
 ```
 
@@ -86,40 +93,17 @@ node prepare-digest.js | node generate-digest.js | node deliver.js
 
 ### 第六步：设置每日自动执行
 
-```bash
-cat > ~/Library/LaunchAgents/com.followbuilders.digest.plist << 'EOF'
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>Label</key>
-  <string>com.followbuilders.digest</string>
-  <key>ProgramArguments</key>
-  <array>
-    <string>/bin/bash</string>
-    <string>-c</string>
-    <string>~/follow-builders/scripts/run_digest.sh</string>
-  </array>
-  <key>StartCalendarInterval</key>
-  <dict>
-    <key>Hour</key>
-    <integer>10</integer>
-    <key>Minute</key>
-    <integer>30</integer>
-  </dict>
-  <key>StandardOutPath</key>
-  <string>/tmp/follow-builders.log</string>
-  <key>StandardErrorPath</key>
-  <string>/tmp/follow-builders.log</string>
-</dict>
-</plist>
-EOF
+运行一键安装脚本，它会为你这台电脑自动生成正确路径并加载定时任务（重复运行也安全）：
 
-# 激活定时任务
-launchctl load ~/Library/LaunchAgents/com.followbuilders.digest.plist
+```bash
+bash ~/follow-builders/scripts/install_schedule.sh
 ```
 
 **搞定！从明天起，每天 10:30 你的浏览器会自动弹出最新一期 AI 情报。**
+
+> 💡 **错过了 10:30 也没关系。** 定时任务包含补跑机制（开机时 + 每 30 分钟检查一次）：
+> 只要当天还没生成过摘要、且已过 10:30，打开电脑后会自动补上当天的摘要。
+> 每天只会生成一次，不会重复弹出。
 
 ---
 
@@ -127,12 +111,14 @@ launchctl load ~/Library/LaunchAgents/com.followbuilders.digest.plist
 
 | | 原版 | 本定制版 |
 |---|---|---|
-| **阅读体验** | 纯文本 / Telegram 消息 | SaaS 级卡片 UI，Inter 字体 |
+| **阅读体验** | 纯文本 / Telegram 消息 | 杂志式简报排版 + 双语切换 |
+| **往期归档** | 不保存 | ✅ 每日存档 + 归档索引页 |
 | **内容导航** | 无 | 今日速览 Top 5 + 锚点跳转 |
 | **关键词识别** | 无 | 30+ AI 术语自动高亮 |
 | **暗色模式** | 无 | ✅ 一键切换，偏好记忆 |
-| **本地存储** | 不保存 | 每日自动归档为 HTML 文件 |
-| **失败处理** | 静默失败 | macOS 弹窗提醒 + 一键重试 |
+| **失败处理** | 静默失败 | 自动重试 + macOS 弹窗提醒 |
+| **错过定时** | 当天摘要丢失 | ✅ 开机自动补跑，绝不漏一期 |
+| **原文链接** | 大段裸链接刷屏 | ✅ 卡片底部紧凑链接胶囊 |
 | **返回顶部** | 无 | ✅ 浮动按钮，平滑滚动 |
 | **阅读进度** | 无 | ✅ 顶部渐变进度条 |
 | **信息源更新** | ✅ 云端自动同步 | ✅ **完整保留** |
@@ -145,31 +131,35 @@ launchctl load ~/Library/LaunchAgents/com.followbuilders.digest.plist
 ~/follow-builders/scripts/
 ├── prepare-digest.js      # 从云端拉取最新信息源
 ├── generate-digest.js     # 调用 Claude AI 生成双语摘要
-├── deliver.js             # ⭐ 定制版交付脚本（SaaS UI）
-└── run_digest.sh          # ⭐ 执行包装（失败弹窗+重试）
+├── deliver.js             # ⭐ 定制版交付脚本（SaaS UI + 链接胶囊）
+├── run_digest.sh          # ⭐ 执行包装（幂等守卫+自动重试+失败弹窗）
+├── install_schedule.sh    # ⭐ 定时任务一键安装（自动适配本机路径）
+├── smoke-test.js          # ⭐ 冒烟测试（npm test）
+└── com.followbuilders.digest.plist  # ⭐ launchd 任务模板（含补跑机制）
 
 ~/.follow-builders/
-├── config.json            # 推送方式配置
-└── .env                   # API 密钥（可选）
+├── config.json            # 推送配置
+└── cache/marked.min.js    # 自动缓存的渲染库（离线能力）
 
 ~/Documents/AI_Builders_Digests/
-├── 2026-05-07.html        # 每日摘要归档
-├── 2026-05-08.html
+├── index.html             # ⭐ 归档索引页（每次生成后自动刷新）
+├── 2026-06-10.html        # 每日摘要归档
+├── 2026-06-11.html
 └── ...
 ```
 
 ---
 
-## ⚙️ 支持的推送方式
+## ⚙️ 推送方式
 
-在 `~/.follow-builders/config.json` 中修改 `delivery.method`：
+本项目为**纯网页版**：每天生成一个独立 HTML 存入归档文件夹并自动打开浏览器，同时刷新归档索引页（`index.html`）。
 
-| 方式 | 值 | 说明 |
-|------|-----|------|
-| 本地网页（推荐） | `local_html` | 生成 HTML 并自动弹出浏览器 |
-| Telegram | `telegram` | 通过 Bot 推送到指定聊天 |
-| Email | `email` | 通过 Resend API 发送邮件 |
-| 终端输出 | `stdout` | 直接打印到命令行 |
+在 `~/.follow-builders/config.json` 中可调整：
+
+| 配置 | 说明 |
+|------|------|
+| `delivery.method` | `local_html`（默认，网页版）或 `stdout`（打印到终端） |
+| `delivery.folder` | 归档文件夹位置，默认 `~/Documents/AI_Builders_Digests` |
 
 ---
 
@@ -180,12 +170,14 @@ launchctl load ~/Library/LaunchAgents/com.followbuilders.digest.plist
 cd ~/follow-builders/scripts
 node prepare-digest.js | node generate-digest.js | node deliver.js
 
+# 改完代码后跑冒烟测试（验证页面关键功能没被改坏）
+cd ~/follow-builders/scripts && npm test
+
 # 查看运行日志
 cat /tmp/follow-builders.log
 
-# 重新加载定时任务
-launchctl unload ~/Library/LaunchAgents/com.followbuilders.digest.plist
-launchctl load ~/Library/LaunchAgents/com.followbuilders.digest.plist
+# 重新安装/重新加载定时任务
+bash ~/follow-builders/scripts/install_schedule.sh
 ```
 
 ---
@@ -193,13 +185,19 @@ launchctl load ~/Library/LaunchAgents/com.followbuilders.digest.plist
 ## 💡 FAQ
 
 **Q: 信息源是谁维护的？**
-A: 原项目作者在云端统一维护。你的本地版本每次执行时自动同步最新名单，无需手动操作。
+A: 原项目作者在云端统一维护。你的本地版本**每次执行时实时同步**最新名单和最新提示词——上游加了新人选或优化了摘要风格，第二天自动生效，无需任何操作。仅当网络不可用时才回退到本地副本。
+
+**Q: 往期摘要在哪里看？**
+A: 页面右上角点「归档」，或直接打开归档文件夹里的 `index.html`，所有往期按日期倒序排列。
 
 **Q: 生成失败了怎么办？**
-A: 如果定时任务执行失败，macOS 会弹出对话框问你是否重试。你也可以手动在终端执行上面的命令。
+A: 脚本会先自动重试一次；仍失败时 macOS 会弹出对话框问你是否重试（每天最多打扰一次）。之后每 30 分钟还会自动补跑，直到当天摘要生成成功。你也可以手动在终端执行上面的命令。
+
+**Q: 10:30 没开电脑，摘要会丢吗？**
+A: 不会。只要当天任意时间打开电脑，补跑机制会立即生成当天的摘要。
 
 **Q: 可以修改执行时间吗？**
-A: 编辑 `~/Library/LaunchAgents/com.followbuilders.digest.plist` 中的 `Hour` 和 `Minute` 值，然后重新加载。
+A: 改两处：`scripts/com.followbuilders.digest.plist` 模板中的 `Hour`/`Minute`，以及 `scripts/run_digest.sh` 中的 `DELIVERY_TIME`（补跑机制的时间下限），然后重新运行 `bash scripts/install_schedule.sh`。
 
 **Q: 摘要保存在哪？**
 A: `~/Documents/AI_Builders_Digests/` 目录下，按日期命名。

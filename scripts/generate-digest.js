@@ -11,8 +11,31 @@
 // ============================================================================
 
 import { spawn } from 'child_process';
+import { existsSync } from 'fs';
+import { join } from 'path';
+import { homedir } from 'os';
 
-const CLAUDE_BIN = '/opt/homebrew/bin/claude';
+// Resolve the claude CLI without hardcoding a machine-specific path.
+// Override with CLAUDE_BIN=/path/to/claude if needed.
+function resolveClaudeBin() {
+  if (process.env.CLAUDE_BIN) return process.env.CLAUDE_BIN;
+  const candidates = [
+    '/opt/homebrew/bin/claude',          // Homebrew on Apple Silicon
+    '/usr/local/bin/claude',             // Homebrew on Intel
+    join(homedir(), '.local', 'bin', 'claude'),
+    join(homedir(), '.claude', 'local', 'claude')
+  ];
+  for (const p of candidates) {
+    if (existsSync(p)) return p;
+  }
+  return 'claude'; // fall back to PATH lookup
+}
+
+const CLAUDE_BIN = resolveClaudeBin();
+
+// A hung claude process would silently kill the whole day's digest;
+// the launchd catch-up interval will retry after we bail out.
+const CLAUDE_TIMEOUT_MS = 15 * 60 * 1000;
 
 async function main() {
   // Read JSON blob from stdin
@@ -102,14 +125,40 @@ Output only the digest text itself — no preamble, no explanation, no markdown 
       env: { ...process.env, CLAUDE_CODE_ENTRYPOINT: 'cli' }
     });
 
-    proc.stdout.pipe(process.stdout);
+    // Buffer the output so we can validate it before passing it downstream —
+    // the claude CLI sometimes prints API errors to stdout with exit code 0,
+    // which previously got archived as if it were a real digest.
+    const out = [];
+    proc.stdout.on('data', d => out.push(d));
     proc.stderr.on('data', d => process.stderr.write(d));
 
+    const timer = setTimeout(() => {
+      proc.kill('SIGKILL');
+      reject(new Error(`claude timed out after ${CLAUDE_TIMEOUT_MS / 60000} minutes`));
+    }, CLAUDE_TIMEOUT_MS);
+
     proc.on('close', code => {
-      if (code === 0) resolve();
-      else reject(new Error(`claude exited with code ${code}`));
+      clearTimeout(timer);
+      if (code !== 0) return reject(new Error(`claude exited with code ${code}`));
+      const text = Buffer.concat(out).toString('utf-8');
+      const trimmed = text.trim();
+      if (trimmed.length < 200 || /^(failed to authenticate|api error|error:)/i.test(trimmed)) {
+        return reject(new Error('claude returned an error instead of a digest: ' + trimmed.slice(0, 120)));
+      }
+      process.stdout.write(text);
+      resolve();
     });
-    proc.on('error', reject);
+    proc.on('error', err => {
+      clearTimeout(timer);
+      if (err.code === 'ENOENT') {
+        reject(new Error(
+          'claude CLI not found. Install Claude Code (https://docs.anthropic.com/en/docs/claude-code) ' +
+          'or set CLAUDE_BIN=/path/to/claude'
+        ));
+      } else {
+        reject(err);
+      }
+    });
   });
 }
 

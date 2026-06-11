@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.followbuilders.digest</string>
+    <!-- __RUN_DIGEST_PATH__ is replaced with the real path by install_schedule.sh -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>__RUN_DIGEST_PATH__</string>
+    </array>
+    <!-- Primary schedule: daily delivery time -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>10</integer>
+        <key>Minute</key>
+        <integer>30</integer>
+    </dict>
+    <!-- Catch-up: run at login/boot, so a Mac that was off at 10:30
+         generates the digest as soon as it's turned on -->
+    <key>RunAtLoad</key>
+    <true/>
+    <!-- Catch-up: poll every 30 min; run_digest.sh exits instantly when
+         today's digest already exists or it's before delivery time -->
+    <key>StartInterval</key>
+    <integer>1800</integer>
+    <key>StandardOutPath</key>
+    <string>/tmp/follow-builders.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/follow-builders.log</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+</dict>
+</plist>

@@ -16,7 +16,7 @@
 // Output: JSON to stdout
 // ============================================================================
 
-import { readFile, mkdir } from 'fs/promises';
+import { readFile } from 'fs/promises';
 import { existsSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
@@ -39,18 +39,42 @@ const PROMPT_FILES = [
   'translate.md'
 ];
 
+const SCRIPT_DIR = decodeURIComponent(new URL('.', import.meta.url).pathname);
+const REPO_ROOT = join(SCRIPT_DIR, '..');
+
 // -- Fetch helpers -----------------------------------------------------------
+// Network failures must never crash the pipeline (cron/launchd environments
+// often have restricted or not-yet-ready network): timeout + null on error,
+// callers fall back to the local copies shipped in the repo.
+
+const FETCH_TIMEOUT_MS = 15000;
 
 async function fetchJSON(url) {
-  const res = await fetch(url);
-  if (!res.ok) return null;
-  return res.json();
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
 }
 
 async function fetchText(url) {
-  const res = await fetch(url);
-  if (!res.ok) return null;
-  return res.text();
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+    if (!res.ok) return null;
+    return await res.text();
+  } catch {
+    return null;
+  }
+}
+
+async function readLocalJSON(path) {
+  try {
+    return JSON.parse(await readFile(path, 'utf-8'));
+  } catch {
+    return null;
+  }
 }
 
 // -- Main --------------------------------------------------------------------
@@ -72,16 +96,26 @@ async function main() {
     }
   }
 
-  // 2. Fetch all three feeds
-  const [feedX, feedPodcasts, feedBlogs] = await Promise.all([
+  // 2. Fetch all three feeds — remote first, falling back to the local
+  // copies committed in the repo (synced daily by GitHub Actions)
+  let [feedX, feedPodcasts, feedBlogs] = await Promise.all([
     fetchJSON(FEED_X_URL),
     fetchJSON(FEED_PODCASTS_URL),
     fetchJSON(FEED_BLOGS_URL)
   ]);
 
-  if (!feedX) errors.push('Could not fetch tweet feed');
-  if (!feedPodcasts) errors.push('Could not fetch podcast feed');
-  if (!feedBlogs) errors.push('Could not fetch blog feed');
+  if (!feedX) {
+    feedX = await readLocalJSON(join(REPO_ROOT, 'feed-x.json'));
+    errors.push(feedX ? 'Tweet feed: remote unreachable, using local copy' : 'Could not fetch tweet feed');
+  }
+  if (!feedPodcasts) {
+    feedPodcasts = await readLocalJSON(join(REPO_ROOT, 'feed-podcasts.json'));
+    errors.push(feedPodcasts ? 'Podcast feed: remote unreachable, using local copy' : 'Could not fetch podcast feed');
+  }
+  if (!feedBlogs) {
+    feedBlogs = await readLocalJSON(join(REPO_ROOT, 'feed-blogs.json'));
+    errors.push(feedBlogs ? 'Blog feed: remote unreachable, using local copy' : 'Could not fetch blog feed');
+  }
 
   // 3. Load prompts with priority: user custom > remote (GitHub) > local default
   //
@@ -90,8 +124,7 @@ async function main() {
   // Otherwise, fetch the latest from GitHub so they get central improvements.
   // If GitHub is unreachable, fall back to the local copy shipped with the skill.
   const prompts = {};
-  const scriptDir = decodeURIComponent(new URL('.', import.meta.url).pathname);
-  const localPromptsDir = join(scriptDir, '..', 'prompts');
+  const localPromptsDir = join(REPO_ROOT, 'prompts');
   const userPromptsDir = join(USER_DIR, 'prompts');
 
   for (const filename of PROMPT_FILES) {
