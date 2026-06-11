@@ -12,13 +12,21 @@
 # silently, then asks the user via a macOS dialog (with timeout).
 # ============================================================================
 
-export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+# launchd/cron PATH lacks Homebrew dirs; cover Apple Silicon (/opt/homebrew),
+# Intel (/usr/local), and nvm/volta installs already on the user PATH.
+export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH:/usr/bin:/bin:/usr/sbin:/sbin"
 set -o pipefail
 
-SCRIPT_DIR="/Users/monasmacbook/follow-builders/scripts"
+# Resolve our own location — no hardcoded usernames
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG="$HOME/.follow-builders/config.json"
 LOG="/tmp/follow-builders.log"
-NODE="/opt/homebrew/bin/node"
+
+NODE="$(command -v node)"
+if [ -z "$NODE" ]; then
+  echo "[$(date)] ERROR: node not found in PATH ($PATH)" >> "$LOG"
+  exit 1
+fi
 
 # Delivery time guard (HHMM, no colon). Keep in sync with config.json deliveryTime.
 DELIVERY_TIME=1030

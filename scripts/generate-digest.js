@@ -11,8 +11,27 @@
 // ============================================================================
 
 import { spawn } from 'child_process';
+import { existsSync } from 'fs';
+import { join } from 'path';
+import { homedir } from 'os';
 
-const CLAUDE_BIN = '/opt/homebrew/bin/claude';
+// Resolve the claude CLI without hardcoding a machine-specific path.
+// Override with CLAUDE_BIN=/path/to/claude if needed.
+function resolveClaudeBin() {
+  if (process.env.CLAUDE_BIN) return process.env.CLAUDE_BIN;
+  const candidates = [
+    '/opt/homebrew/bin/claude',          // Homebrew on Apple Silicon
+    '/usr/local/bin/claude',             // Homebrew on Intel
+    join(homedir(), '.local', 'bin', 'claude'),
+    join(homedir(), '.claude', 'local', 'claude')
+  ];
+  for (const p of candidates) {
+    if (existsSync(p)) return p;
+  }
+  return 'claude'; // fall back to PATH lookup
+}
+
+const CLAUDE_BIN = resolveClaudeBin();
 
 // A hung claude process would silently kill the whole day's digest;
 // the launchd catch-up interval will retry after we bail out.
@@ -121,7 +140,14 @@ Output only the digest text itself — no preamble, no explanation, no markdown 
     });
     proc.on('error', err => {
       clearTimeout(timer);
-      reject(err);
+      if (err.code === 'ENOENT') {
+        reject(new Error(
+          'claude CLI not found. Install Claude Code (https://docs.anthropic.com/en/docs/claude-code) ' +
+          'or set CLAUDE_BIN=/path/to/claude'
+        ));
+      } else {
+        reject(err);
+      }
     });
   });
 }
