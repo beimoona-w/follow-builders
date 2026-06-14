@@ -61,7 +61,39 @@ async function getMarkedSource() {
   }
 }
 
+// Normalize the day's markdown so the card/section layout works regardless of
+// how that run's model formatted it. The prompt is followed live (intentionally
+// not pinned), so formatting drifts: some days emit proper "## SECTION" /
+// "### Name" headings; others wrap section names in box-drawing rules and mark
+// each builder with **bold** instead of a heading. We rewrite the latter into
+// the heading form the layout engine keys off, so the briefing sidebar and
+// per-builder cards come back. Idempotent — already-heading content passes through.
+function normalizeDigestMarkdown(md) {
+  if (!md) return md;
+  var lines = md.replace(/\r\n/g, '\n').split('\n');
+  var BOX_RULE = /^[─-╿]{3,}$/;                 // ═══ / ━━━ / ─── borders
+  var SECTION = /^(X\s*\/\s*TWITTER|TWITTER\s*\/\s*X|PODCASTS?|BLOGS?|NEWSLETTERS?|YOUTUBE)$/i;
+  var out = [];
+  for (var i = 0; i < lines.length; i++) {
+    var raw = lines[i];
+    var line = raw.trim();
+    if (BOX_RULE.test(line)) continue;                    // drop border-rule lines
+    if (!/^#/.test(line) && SECTION.test(line)) {         // bare section name -> H2
+      out.push('## ' + line.replace(/\s*\/\s*/, ' / '));
+      continue;
+    }
+    var stars = (line.match(/\*\*/g) || []).length;       // standalone **Name** -> H3 card
+    if (stars === 2 && /^\*\*.+\*\*$/.test(line)) {
+      out.push('### ' + line.slice(2, -2).trim());
+      continue;
+    }
+    out.push(raw);
+  }
+  return out.join('\n').replace(/\n{3,}/g, '\n\n');
+}
+
 function buildHtmlPage(dateStr, markdownText, markedSource) {
+  markdownText = normalizeDigestMarkdown(markdownText);
   // JSON.stringify handles quotes/newlines/backslashes correctly; escaping '<'
   // prevents a literal '</script>' inside the digest from breaking the page.
   var mdLiteral = JSON.stringify(markdownText).replace(/</g, '\\u003c');
@@ -449,4 +481,4 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   main();
 }
 
-export { buildHtmlPage, generateArchiveIndex, getMarkedSource };
+export { buildHtmlPage, generateArchiveIndex, getMarkedSource, normalizeDigestMarkdown };
